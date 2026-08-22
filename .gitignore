@@ -1,0 +1,16 @@
+# 运行时生成文件（不要提交）
+logs/
+debug/
+.checkin.lock
+last-signin-date.txt
+last-result.txt
+power-change-result.txt
+task-template.xml
+workbuddy-config.json
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+
+# 发布包（由 Release 管理，不提交）
+*.zip
