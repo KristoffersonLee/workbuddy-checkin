@@ -69,9 +69,7 @@ param(
     # 日志保留天数
     [int]$LogKeepDays = 180,
     # 点击领取后的验证轮询总时长（秒）
-    [int]$ClaimVerifySec = 20,
-    # 锁文件过期接管分钟数（防挂死实例占锁）
-    [int]$LockStaleMin = 45
+    [int]$ClaimVerifySec = 20
 )
 
 $ErrorActionPreference = "Stop"
@@ -136,6 +134,10 @@ Get-ChildItem $LogDir -Filter "checkin-*.log" -ErrorAction SilentlyContinue |
 Get-ChildItem $DebugDir -Filter "*.png" -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
     Remove-Item -Force -ErrorAction SilentlyContinue
+# 清理崩溃残留的临时截图
+Get-ChildItem $env:TEMP -Filter "wb-checkin-*.png" -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
 # ============================================================
 # 2. Win32 API
@@ -191,7 +193,7 @@ function Show-Notification {
         $ni.BalloonTipText = $Text
         $ni.Visible = $true
         $ni.ShowBalloonTip(5000)
-        Start-Sleep -Seconds 8
+        Start-Sleep -Seconds 5
         $ni.Dispose()
     } catch { }
 }
@@ -235,10 +237,17 @@ function Set-LastSigninDate {
 }
 
 # ============================================================
-# 4. 单实例锁（带时间戳自愈）
+# 4. 单实例锁（PID 存活检测自愈）
 # ============================================================
 $lockPath = Join-Path $PSScriptRoot ".checkin.lock"
+$lockInfoPath = Join-Path $PSScriptRoot ".checkin.info"
 $script:lockStream = $null
+
+# 更新锁信息文件（供其他实例读取 PID 以判断存活）
+function Update-LockInfo {
+    $info = "{0}|{1}" -f $PID, (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    try { [System.IO.File]::WriteAllText($lockInfoPath, $info, (New-Object System.Text.UTF8Encoding($false))) } catch { }
+}
 
 function Acquire-Lock {
     try {
@@ -246,37 +255,29 @@ function Acquire-Lock {
             [System.IO.FileMode]::OpenOrCreate,
             [System.IO.FileAccess]::ReadWrite,
             [System.IO.FileShare]::None)
-        $info = "{0}|{1}" -f $PID, (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-        $script:lockStream.SetLength(0)
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($info)
-        $script:lockStream.Write($bytes, 0, $bytes.Length)
-        $script:lockStream.Flush()
+        Update-LockInfo
         return $true
     }
     catch {
-        # 锁被占用：用文件元数据（LastWriteTime）判断是否为卡死的过期实例。
-        # 注意：持有者以 FileShare::None 打开，锁内容无法读取，但元数据不受共享模式限制。
+        # 锁被占用：读取持有者 PID，判断其是否仍然存活
         $stale = $false
         try {
-            $lockInfo = Get-Item $lockPath -ErrorAction Stop
-            if ($lockInfo.LastWriteTime -lt (Get-Date).AddMinutes(-$LockStaleMin)) {
+            $content = [System.IO.File]::ReadAllText($lockInfoPath, [System.Text.Encoding]::UTF8).Trim()
+            if ($content -match '^(\d+)\|') {
+                $holderPid = [int]$matches[1]
+                $holderProc = Get-Process -Id $holderPid -ErrorAction SilentlyContinue
+                if (-not $holderProc) { $stale = $true }
+            }
+            else {
                 $stale = $true
             }
-        } catch { }
+        }
+        catch { $stale = $true }
         if ($stale) {
-            # 正常签到流程有严格的时间上限（启动等待+空闲等待+领取验证+繁忙等待 < 45 分钟），
-            # 因此持有锁超过 LockStaleMin 的实例必然是卡死的：终止所有其它本签到脚本实例后接管
             try {
-                $others = Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-                    $_.Name -match 'powershell' -and
-                    $_.CommandLine -match 'workbuddy-checkin' -and
-                    $_.ProcessId -ne $PID
-                }
-                foreach ($o in $others) {
-                    Write-Log "检测到卡死的签到实例（PID $($o.ProcessId)，超过 ${LockStaleMin} 分钟），终止..." "WARN"
-                    Stop-Process -Id $o.ProcessId -Force -ErrorAction SilentlyContinue
-                }
-                if ($others) { Start-Sleep -Seconds 3 }
+                Write-Log "检测到卡死的签到实例（锁无存活持有者），接管运行..." "WARN"
+                Remove-Item $lockPath -Force -ErrorAction SilentlyContinue
+                Remove-Item $lockInfoPath -Force -ErrorAction SilentlyContinue
             } catch { }
         }
         try {
@@ -284,11 +285,7 @@ function Acquire-Lock {
                 [System.IO.FileMode]::OpenOrCreate,
                 [System.IO.FileAccess]::ReadWrite,
                 [System.IO.FileShare]::None)
-            $info = "{0}|{1}" -f $PID, (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-            $script:lockStream.SetLength(0)
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($info)
-            $script:lockStream.Write($bytes, 0, $bytes.Length)
-            $script:lockStream.Flush()
+            Update-LockInfo
             return $true
         }
         catch {
@@ -559,8 +556,8 @@ $DonePattern = '今日已签到|今日已[领領]取|签到成功|[领領]取成
 $EntryPattern = '签到[领領]积分|去签到|每日签到|签到有礼|加油站|[领領]积分'
 # 登录界面
 $LoginPattern = '^登录$|^微信登录$|^扫码登录$|^手机号登录$|^手机验证码登录$|^其他登录方式$|^邮箱登录$'
-# 加油站类内容（用于"找不到领取按钮时假设已签到"的佐证）
-$GasStationPattern = '加油站|积分|已[领領]|签到|[领領]取|可[领領]|奖励|任务'
+# 加油站页面佐证（只用强标识词：侧边栏「暂无任务」等泛化词已排除，避免误判「已签到」）
+$GasStationPattern = '加油站|积分|已[领領]取|签到成功|明日再来|明天再来|已连续签到|连续签到'
 
 function Get-CheckinState {
     param($Lines)
@@ -706,7 +703,19 @@ function Test-WorkBuddyBusy {
             }
         }
     }
-    # 2) 界面 OCR 关键词
+    # 2) CPU 采样
+    $cpu = Get-WorkBuddyCpuPercent
+    if ($cpu -ge $CpuBusyThreshold) {
+        return @{ Busy = $true; Reason = "CPU占用:${cpu}%" }
+    }
+    return @{ Busy = $false; Reason = "" }
+}
+
+# 重型检测：包含界面 OCR 关键词（截图 + 识别，开销大，仅在轻型检测通过后每 N 分钟执行一次）
+function Test-WorkBuddyBusyWithOcr {
+    param($Hwnd)
+    $light = Test-WorkBuddyBusy $Hwnd
+    if ($light.Busy) { return $light }
     try {
         $lines = Get-ScreenOcrLines
         foreach ($kw in $OcrBusyKeywords) {
@@ -716,11 +725,6 @@ function Test-WorkBuddyBusy {
             }
         }
     } catch { }
-    # 3) CPU 采样
-    $cpu = Get-WorkBuddyCpuPercent
-    if ($cpu -ge $CpuBusyThreshold) {
-        return @{ Busy = $true; Reason = "CPU占用:${cpu}%" }
-    }
     return @{ Busy = $false; Reason = "" }
 }
 
@@ -796,8 +800,15 @@ function Invoke-SmartExit {
     Write-Log "签到完成，进入智能退出检测（任务检测 + 用户活动检测）..." "INFO"
     $deadline = (Get-Date).AddMinutes($TaskWaitMin)
     $checked = $false
+    $tick = 0
     while ($true) {
-        $busy = Test-WorkBuddyBusy $Hwnd
+        # 轻型检测（标题 + CPU）每秒都可做；重型 OCR 检测每 3 分钟做一次
+        if ($tick % 3 -eq 0) {
+            $busy = Test-WorkBuddyBusyWithOcr $Hwnd
+        }
+        else {
+            $busy = Test-WorkBuddyBusy $Hwnd
+        }
         $active = Test-UserActive $Hwnd
         if (-not $busy.Busy -and -not $active) {
             if ($checked) {
@@ -815,6 +826,7 @@ function Invoke-SmartExit {
             return
         }
         $checked = $true
+        $tick++
         Start-Sleep -Seconds 60
     }
     $ok = Stop-WorkBuddyGracefully
@@ -891,6 +903,23 @@ function Main {
         $state = Get-CheckinState (Get-ScreenOcrLines)
 
         # ---------- 状态机 ----------
+        # 若主界面未识别到任何签到元素，先尝试点击头像展开菜单
+        if ($state.Status -eq "none" -and -not $DryRun) {
+            for ($round = 1; $round -le $MaxAvatarRounds; $round++) {
+                $pt = Get-AvatarPoint $hwnd
+                if (-not $pt) { break }
+                for ($attempt = 1; $attempt -le 2; $attempt++) {
+                    Write-Log "第 $round 轮：尝试 $attempt/2 点击用户头像 ($($pt.X), $($pt.Y))..."
+                    [void](Assert-Foreground $hwnd)
+                    Click-Point $pt.X $pt.Y
+                    Start-Sleep -Seconds 2
+                    $state = Get-CheckinState (Get-ScreenOcrLines)
+                    if ($state.Status -ne "none") { break }
+                }
+                if ($state.Status -ne "none") { break }
+            }
+        }
+
         if ($state.Status -eq "login") {
             Write-Log "检测到登录界面，请先在 WorkBuddy 客户端登录后再签到" "WARN"
             Write-Result "FAIL" "未登录"
@@ -940,81 +969,26 @@ function Main {
             }
         }
         else {
-            # 主界面未识别到任何签到元素：快速尝试点击头像（若坐标有效）
-            if (-not $DryRun) {
-                for ($round = 1; $round -le $MaxAvatarRounds; $round++) {
-                    $pt = Get-AvatarPoint $hwnd
-                    if (-not $pt) { break }
-                    for ($attempt = 1; $attempt -le 2; $attempt++) {
-                        Write-Log "第 $round 轮：尝试 $attempt/2 点击用户头像 ($($pt.X), $($pt.Y))..."
-                        [void](Assert-Foreground $hwnd)
-                        Click-Point $pt.X $pt.Y
-                        Start-Sleep -Seconds 2
-                        $state = Get-CheckinState (Get-ScreenOcrLines)
-                        if ($state.Status -ne "none") { break }
-                    }
-                    if ($state.Status -ne "none") { break }
-                }
-            }
-            if ($state.Status -eq "claim") {
-                $rc = Invoke-ClaimClick $state.Line
-                if ($rc -eq "success") {
-                    $script:didClaim = $true
-                    Write-Log "=== 结果: [桌面端] 签到成功 ===" "OK"
-                }
-                else {
-                    Write-Log "=== 结果: [桌面端] 签到失败 ===" "WARN"
+            # 头像尝试后仍无签到元素：若界面为加油站/积分内容 → 判定已签到
+            Start-Sleep -Seconds 2
+            $lines = Get-ScreenOcrLines
+            if (Test-GasStationText $lines) {
+                if ($NoAssumeDone) {
+                    Write-Log "严格模式（-NoAssumeDone）：未识别到签到元素且无法确认，按失败处理" "WARN"
                     Write-OcrDiagnostic
-                    Write-Result "FAIL" "领取验证未通过"
+                    Write-Result "FAIL" "无法确认签到状态"
                     return 1
                 }
-            }
-            elseif ($state.Status -eq "done") {
-                Write-Log "检测到「$($state.Line.Text)」，今日已完成签到" "OK"
+                Write-Log "未识别到「立即领取」，界面为加油站/积分内容 → 判定今日已签到" "WARN"
                 Write-Log "=== 结果: [桌面端] 今日已签到 ===" "OK"
             }
-            elseif ($state.Status -eq "entry") {
-                $result = Open-GasStationAndCheckin $state.Line
-                if ($result -eq "success") {
-                    $script:didClaim = $true
-                    Write-Log "=== 结果: [桌面端] 签到成功 ===" "OK"
-                }
-                elseif ($result -eq "done") {
-                    Write-Log "=== 结果: [桌面端] 今日已签到 ===" "OK"
-                }
-                elseif ($result -eq "login") {
-                    Write-Result "FAIL" "未登录"
-                    return 2
-                }
-                else {
-                    Write-Log "=== 结果: [桌面端] 签到失败 ===" "WARN"
-                    Write-OcrDiagnostic
-                    Write-Result "FAIL" "签到失败"
-                    return 1
-                }
-            }
             else {
-                # 头像尝试后仍无签到元素：若界面为加油站/积分内容 → 判定已签到
-                Start-Sleep -Seconds 2
-                $lines = Get-ScreenOcrLines
-                if (Test-GasStationText $lines) {
-                    if ($NoAssumeDone) {
-                        Write-Log "严格模式（-NoAssumeDone）：未识别到签到元素且无法确认，按失败处理" "WARN"
-                        Write-OcrDiagnostic
-                        Write-Result "FAIL" "无法确认签到状态"
-                        return 1
-                    }
-                    Write-Log "未识别到「立即领取」，界面为加油站/积分内容 → 判定今日已签到" "WARN"
-                    Write-Log "=== 结果: [桌面端] 今日已签到 ===" "OK"
-                }
-                else {
-                    Write-Log "未识别到签到相关元素，请确认 WorkBuddy 已登录、窗口未被遮挡" "WARN"
-                    Write-Log "若头像位置不对，可先运行: .\workbuddy-checkin.ps1 -Calibrate" "WARN"
-                    Write-OcrDiagnostic
-                    Write-Result "FAIL" "未找到签到入口"
-                    Show-Notification "WorkBuddy 签到" "签到失败：未找到签到入口"
-                    return 1
-                }
+                Write-Log "未识别到签到相关元素，请确认 WorkBuddy 已登录、窗口未被遮挡" "WARN"
+                Write-Log "若头像位置不对，可先运行: .\workbuddy-checkin.ps1 -Calibrate" "WARN"
+                Write-OcrDiagnostic
+                Write-Result "FAIL" "未找到签到入口"
+                Show-Notification "WorkBuddy 签到" "签到失败：未找到签到入口"
+                return 1
             }
         }
 
@@ -1043,6 +1017,7 @@ function Main {
             try { $script:lockStream.Close() } catch { }
             $script:lockStream = $null
         }
+        try { Remove-Item $lockInfoPath -Force -ErrorAction SilentlyContinue } catch { }
     }
 }
 

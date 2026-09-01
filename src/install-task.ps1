@@ -85,7 +85,7 @@ if (-not $taskOk) {
     # 非管理员（或管理员注册失败）：schtasks + XML（每日 + 每小时重复）
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $escapedPath = $ScriptPath.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
-    $startBoundary = "2026-08-15T$($Time):00"
+    $startBoundary = "{0:yyyy-MM-dd}T{1}:00" -f (Get-Date), $Time
     $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">

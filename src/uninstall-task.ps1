@@ -71,6 +71,14 @@ if ($PSCmdlet.ShouldProcess($TaskName, "删除计划任务")) {
     else {
         Write-Host "  - 计划任务不存在，跳过" -ForegroundColor DarkGray
     }
+
+    # 删除锁文件
+    @(".checkin.lock", ".checkin.info") | ForEach-Object {
+        $p = Join-Path $PSScriptRoot $_
+        if (Test-Path $p) {
+            Remove-Item $p -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # ============================================================
@@ -149,11 +157,12 @@ if ($RemoveAll) {
                 Write-Host "  - 删除失败（可能被占用）: $($_.Name) - $($_.Exception.Message)" -ForegroundColor Red
             }
         }
-        # 延迟删除自身与文件夹（等本 PowerShell 进程退出后再执行）
+        # 延迟删除自身与文件夹（等本 PowerShell 进程退出后，cmd 循环重试直到成功）
         if (Test-Path $dir) {
-            $cmdLine = 'timeout /t 3 /nobreak >nul 2>&1 & rd /s /q "' + $dir + '"'
+            $file = Join-Path $dir "uninstall-task.ps1"
+            $cmdLine = 'timeout /t 3 /nobreak >nul 2>&1 & ":loop" & del "' + $file + '" >nul 2>&1 & if exist "' + $file + '" (timeout /t 1 & goto loop) & rd /s /q "' + $dir + '"'
             Start-Process cmd.exe -ArgumentList "/c", $cmdLine -WindowStyle Hidden | Out-Null
-            Write-Host "  - 项目文件夹将在 3 秒后自动删除: $dir" -ForegroundColor Green
+            Write-Host "  - 项目文件夹将在进程退出后自动删除: $dir" -ForegroundColor Green
         }
         Write-Host ""
         Write-Host "✔ 彻底卸载完成：计划任务、登录自启、项目文件夹均已清除。" -ForegroundColor Green
