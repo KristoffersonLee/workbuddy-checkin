@@ -40,7 +40,7 @@ Screen capture + Windows built-in Chinese OCR + simulated mouse clicks.
 | 开机自启 | 重启电脑后登录即自动补签，无需手动打开任何东西 |
 | 每日定时 | 每天 08:30 起每小时重试，错过（关机/睡眠/锁屏）自动补跑；**任务隐藏窗口运行，无黑框闪烁** |
 | 锁屏保护 | 屏幕锁定时不模拟点击，避免误操作 |
-| 单实例锁 | 重复触发时自动跳过；**锁带自愈**：卡死的旧实例超过 45 分钟会被自动终止并接管 |
+| 单实例锁 | 重复触发时自动跳过；**锁带 PID 存活检测自愈**：通过检测锁持有者进程是否存活来判断是否卡死，精准接管 |
 | 防挂死 | 每次 OCR 调用带 15 秒超时保护，脚本不会无限卡住 |
 | 完整日志 | 月度日志文件 + 最近结果文件；失败时自动输出屏幕 OCR 文本前 15 行方便诊断 |
 | 托盘通知 | 签到成功/失败时系统托盘气泡提示（可 -NoNotify 关闭） |
@@ -70,7 +70,8 @@ workbuddy-checkin/
 ├── last-signin-date.txt          # 最近成功签到日期（自动维护）
 ├── last-result.txt               # 最近一次运行结果
 ├── power-change-result.txt       # 电源设置脚本输出
-└── .checkin.lock                 # 单实例锁（自动维护）
+├── .checkin.lock                 # 单实例锁（自动维护）
+└── .checkin.info                 # 锁持有者信息（PID，用于存活检测）
 ```
 
 ## 🚀 快速开始
@@ -226,7 +227,7 @@ OCR 无法识别时用 `-SaveScreens` 截图对照。
 | Auto-start on login | After a reboot, logs in and auto-catches-up — nothing to open manually |
 | Daily schedule | Starts at 08:30 every day with hourly retries; missed triggers (off/sleep/locked) auto-run later; **runs with a hidden window, no console flash** |
 | Locked-screen guard | Never clicks while the screen is locked |
-| Single-instance lock | Duplicate triggers are skipped; the lock **self-heals** — a hung instance older than 45 min is killed and taken over |
+| Single-instance lock | Duplicate triggers are skipped; the lock **self-heals via PID liveness check** — detects whether the lock holder process is still alive, takes over precisely |
 | Hang protection | Every OCR call has a 15 s timeout, so the script can never hang forever |
 | Full logging | Monthly logs + last-result file; on failure it dumps the first 15 OCR lines for diagnosis |
 | Tray notifications | Balloon tips on success/failure (disable with -NoNotify) |

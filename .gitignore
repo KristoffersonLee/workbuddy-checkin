@@ -2,6 +2,7 @@
 logs/
 debug/
 .checkin.lock
+.checkin.info
 last-signin-date.txt
 last-result.txt
 power-change-result.txt
