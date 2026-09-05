@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     卸载 WorkBuddy 每日自动签到（v2：支持彻底卸载与电源还原）
 
@@ -42,6 +42,135 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# ============================================================
+# 交互式选择卸载模式（仅在未显式传入 -RemoveAll 时弹出）
+# ============================================================
+if (-not $PSBoundParameters.ContainsKey('RemoveAll')) {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+
+        $font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10)
+        $fontBold = New-Object System.Drawing.Font('Microsoft YaHei UI', 10, [System.Drawing.FontStyle]::Bold)
+
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = '选择卸载模式'
+        $form.Size = New-Object System.Drawing.Size(480, 320)
+        $form.StartPosition = 'CenterScreen'
+        $form.FormBorderStyle = 'FixedDialog'
+        $form.MaximizeBox = $false
+        $form.MinimizeBox = $false
+        $form.Font = $font
+        $form.BackColor = [System.Drawing.Color]::White
+
+        $lblTitle = New-Object System.Windows.Forms.Label
+        $lblTitle.Text = '请选择卸载方式'
+        $lblTitle.Font = $fontBold
+        $lblTitle.AutoSize = $true
+        $lblTitle.Location = New-Object System.Drawing.Point(20, 18)
+        $form.Controls.Add($lblTitle)
+
+        $lblDesc = New-Object System.Windows.Forms.Label
+        $lblDesc.Text = '常规卸载仅删除计划任务和登录自启项，脚本文件保留。'
+        $lblDesc.AutoSize = $true
+        $lblDesc.Location = New-Object System.Drawing.Point(20, 50)
+        $lblDesc.ForeColor = [System.Drawing.Color]::Gray
+        $form.Controls.Add($lblDesc)
+
+        $rbRegular = New-Object System.Windows.Forms.RadioButton
+        $rbRegular.Text = '常规卸载（保留脚本文件夹）'
+        $rbRegular.Location = New-Object System.Drawing.Point(30, 85)
+        $rbRegular.Size = New-Object System.Drawing.Size(400, 26)
+        $rbRegular.Checked = $true
+        $form.Controls.Add($rbRegular)
+
+        $lblRegular = New-Object System.Windows.Forms.Label
+        $lblRegular.Text = '仅删除计划任务与启动项，脚本/日志/结果文件保留在本地。'
+        $lblRegular.AutoSize = $true
+        $lblRegular.Location = New-Object System.Drawing.Point(50, 112)
+        $lblRegular.ForeColor = [System.Drawing.Color]::Gray
+        $lblRegular.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+        $form.Controls.Add($lblRegular)
+
+        $rbFull = New-Object System.Windows.Forms.RadioButton
+        $rbFull.Text = '完整卸载（删除脚本文件夹及所有文件）'
+        $rbFull.Location = New-Object System.Drawing.Point(30, 145)
+        $rbFull.Size = New-Object System.Drawing.Size(400, 26)
+        $form.Controls.Add($rbFull)
+
+        $lblFull = New-Object System.Windows.Forms.Label
+        $lblFull.Text = '彻底删除整个项目文件夹（脚本、日志、结果、配置等全部清除）。'
+        $lblFull.AutoSize = $true
+        $lblFull.Location = New-Object System.Drawing.Point(50, 172)
+        $lblFull.ForeColor = [System.Drawing.Color]::Gray
+        $lblFull.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+        $form.Controls.Add($lblFull)
+
+        $btnOk = New-Object System.Windows.Forms.Button
+        $btnOk.Text = '确认卸载'
+        $btnOk.Size = New-Object System.Drawing.Size(120, 36)
+        $btnOk.Location = New-Object System.Drawing.Point(210, 220)
+        $btnOk.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
+        $btnOk.ForeColor = [System.Drawing.Color]::White
+        $btnOk.FlatStyle = 'Flat'
+        $btnOk.Font = $fontBold
+        $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $form.AcceptButton = $btnOk
+        $form.Controls.Add($btnOk)
+
+        $btnCancel = New-Object System.Windows.Forms.Button
+        $btnCancel.Text = '取消'
+        $btnCancel.Size = New-Object System.Drawing.Size(100, 36)
+        $btnCancel.Location = New-Object System.Drawing.Point(340, 220)
+        $btnCancel.FlatStyle = 'Flat'
+        $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $form.CancelButton = $btnCancel
+        $form.Controls.Add($btnCancel)
+
+        $result = $form.ShowDialog()
+        $form.Dispose()
+
+        if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+            Write-Host ""
+            Write-Host "已取消卸载。" -ForegroundColor Yellow
+            exit 0
+        }
+
+        $RemoveAll = $rbFull.Checked
+        $font.Dispose()
+        $fontBold.Dispose()
+    }
+    catch {
+        # 对话框失败时回退到命令行选择
+        Write-Host ""
+        Write-Host "请选择卸载模式:" -ForegroundColor Yellow
+        Write-Host "  1) 常规卸载（保留脚本文件夹）" -ForegroundColor Cyan
+        Write-Host "  2) 完整卸载（删除脚本文件夹及所有文件）" -ForegroundColor Cyan
+        $choice = Read-Host "请输入数字 (1 或 2，默认 1)"
+        if ($choice -eq '2') { $RemoveAll = $true }
+    }
+}
+
+# 选择是否还原电源设置（仅在完整卸载且未显式指定 -RestorePower 时询问）
+if ($RemoveAll -and -not $PSBoundParameters.ContainsKey('RestorePower')) {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $result = [System.Windows.Forms.MessageBox]::Show(
+            '是否同时还原电源设置？' + "`n`n" +
+            '点击「是」：恢复 Windows 默认睡眠/休眠设置（睡眠 15/10 分钟、休眠 3 小时）' + "`n" +
+            '点击「否」：保持当前的「永不休眠」设置',
+            '还原电源设置',
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question)
+        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) { $RestorePower = $true }
+    }
+    catch {
+        Write-Host ""
+        $choice = Read-Host "是否还原电源设置（恢复自动睡眠）？(y/N)"
+        if ($choice -match '^[yY]') { $RestorePower = $true }
+    }
+}
 
 Write-Host ""
 Write-Host "=== WorkBuddy 自动签到 卸载 ===" -ForegroundColor Yellow
