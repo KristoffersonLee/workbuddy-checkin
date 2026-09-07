@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     卸载 WorkBuddy 每日自动签到（支持彻底卸载与电源还原）
 
@@ -40,7 +40,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.0.0"
+$Script:Version = "3.1.0"
 
 # ============================================================
 # 交互式选择卸载模式（仅在未显式传入 -RemoveAll 时弹出）

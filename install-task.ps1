@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     安装 WorkBuddy 每日自动签到（计划任务 + 开机自启，一次搞定）
 
@@ -29,7 +29,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.0.0"
+$Script:Version = "3.1.0"
 
 if (-not $ScriptPath) {
     $ScriptPath = Join-Path $PSScriptRoot "workbuddy-checkin.ps1"

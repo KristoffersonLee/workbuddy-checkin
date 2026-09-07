@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     WorkBuddy 每日自动签到 + 智能自动退出
 
@@ -54,7 +54,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.0.0"
+$Script:Version = "3.1.0"
 
 # ============================================================
 # 0. 若运行在 PowerShell Core(pwsh) 下，自动切换到 Windows PowerShell 5.1

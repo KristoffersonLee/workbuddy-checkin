@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     将 Windows 电源设置改为「永不睡眠、永不休眠」（所有电源方案）
 
@@ -13,7 +13,7 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File .\set-never-sleep.ps1
 #>
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.0.0"
+$Script:Version = "3.1.0"
 
 $resultFile = Join-Path $PSScriptRoot "power-change-result.txt"
 $out = New-Object System.Collections.ArrayList

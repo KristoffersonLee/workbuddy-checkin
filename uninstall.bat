@@ -1,6 +1,6 @@
-@echo off
+﻿@echo off
 setlocal
-title WorkBuddy 每日自动签到 - 卸载 v3.0.0
+title WorkBuddy 每日自动签到 - 卸载 v3.1.0
 
 cd /d "%~dp0" 2>nul
 if %errorlevel% neq 0 (
@@ -11,7 +11,7 @@ if %errorlevel% neq 0 (
 
 echo ========================================
 echo   WorkBuddy 每日自动签到 - 卸载程序
-echo   版本: v3.0.0
+echo   版本: v3.1.0
 echo ========================================
 echo.
 
