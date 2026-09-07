@@ -1,17 +1,37 @@
-# 运行时生成文件（不要提交）
+# 运行时状态文件（不应提交到版本控制）
+.last-signin-date.txt
+.last-result.txt
+
+# 运行时日志
 logs/
+*.log
+
+# 调试截图
 debug/
+
+# 安装/运行过程生成的临时文件
+task-template.xml
+power-change-result.txt
 .checkin.lock
 .checkin.info
-last-signin-date.txt
-last-result.txt
-power-change-result.txt
-task-template.xml
+
+# 头像校准配置（用户本地数据）
 workbuddy-config.json
 
-# 系统文件
+# Windows 系统文件
 Thumbs.db
+ehthumbs.db
 Desktop.ini
+.DS_Store
 
-# 发布包（由 Release 管理，不提交）
-*.zip
+# 编辑器/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.tmp
+*.temp
+*.bak

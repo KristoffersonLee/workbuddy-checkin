@@ -1,4 +1,4 @@
-# WorkBuddy 每日自动签到（全自动 · 含智能自动退出）
+# WorkBuddy 每日自动签到（v3.0.0）
 
 > **GitHub 开源地址（含中英双语文档与 Release）**：https://github.com/KristoffersonLee/workbuddy-checkin
 
@@ -23,7 +23,7 @@ WorkBuddy，完成「Buddy 加油站」每日签到领积分，签到完成后**
 | 开机自启 | 重启电脑后登录即自动补签，无需手动打开任何东西 |
 | 每日定时 | 每天 08:30 起每小时重试，错过（关机/睡眠/锁屏）自动补跑；**任务隐藏窗口运行，无黑框闪烁** |
 | 锁屏保护 | 屏幕锁定时不模拟点击，避免误操作 |
-| 单实例锁 | 重复触发时自动跳过；**锁带自愈**：卡死的旧实例超过 45 分钟会被自动终止并接管 |
+| 单实例锁 | 重复触发时自动跳过；**锁带自愈**：卡死的旧实例（进程不存在或锁持有超过 45 分钟）会被自动终止并接管 |
 | 防挂死 | 每次 OCR 调用带 15 秒超时保护，脚本不会无限卡住 |
 | 完整日志 | 月度日志文件 + 最近结果文件；失败时自动输出屏幕 OCR 文本前 15 行方便诊断 |
 | 托盘通知 | 签到成功/失败时系统托盘气泡提示（可 -NoNotify 关闭） |
@@ -34,17 +34,22 @@ WorkBuddy，完成「Buddy 加油站」每日签到领积分，签到完成后**
 ## 目录结构
 
 ```
-wb-checkin\
+workbuddy-checkin-v3.0.0\
 ├── workbuddy-checkin.ps1     # 核心签到脚本（全部逻辑）
 ├── install-task.ps1          # 一键安装：计划任务 + 登录自启
 ├── uninstall-task.ps1        # 一键卸载：删除计划任务 + 自启项
-├── set-never-sleep.ps1       # 电源设置：永不休眠/永不休眠（防睡眠错过签到）
-├── task-template.xml         # 计划任务模板（安装时自动生成）
+├── uninstall.bat             # 一键卸载启动器（双击即可卸载，调用 uninstall-task.ps1）
+├── set-never-sleep.ps1       # 电源设置：永不睡眠/永不休眠（防睡眠错过签到）
 ├── workbuddy-config.json     # 头像坐标（校准后生成）
 ├── last-signin-date.txt      # 最近成功签到日期（自动维护）
 ├── last-result.txt           # 最近一次运行结果（快速查看）
 ├── logs\                     # 月度日志 checkin-yyyy-MM.log（自动清理 180 天前的）
-└── debug\                    # 调试截图（-SaveScreens 时生成）
+├── debug\                    # 调试截图（-SaveScreens 时生成）
+└── LICENSE                   # MIT 许可证
+
+以下文件由安装/运行过程自动生成，无需手动创建：
+├── task-template.xml         # 计划任务模板（install-task.ps1 自动生成，注册成功后自动清理）
+└── power-change-result.txt   # 电源设置结果（set-never-sleep.ps1 自动生成）
 ```
 
 ---
@@ -54,7 +59,7 @@ wb-checkin\
 ### 1. 一键安装（只需一次）
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\20183\Desktop\wb-checkin\install-task.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\install-task.ps1"
 ```
 
 安装脚本自动完成两件事：
@@ -64,26 +69,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\20183\Desktop\wb-c
 2. **创建登录自启项**（启动文件夹 VBS）：每次登录 Windows 自动补签，
    **重启后无需手动打开任何东西**。
 
-> 若系统提示权限不足，右键“以管理员身份运行”PowerShell 再执行一次即可
-> （管理员模式下会额外注册“登录时触发”，非管理员也能正常使用）。
+> 若系统提示权限不足，右键"以管理员身份运行"PowerShell 再执行一次即可
+> （管理员模式下会额外注册"登录时触发"，非管理员也能正常使用）。
 
 ### 2. 立即验证
 
 ```powershell
 # 只识别不点击（安全测试，确认 OCR 与界面识别正常）
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\20183\Desktop\wb-checkin\workbuddy-checkin.ps1" -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\workbuddy-checkin.ps1" -DryRun
 
 # 立即真实签到一次（当天未签时执行，签完自动退出 WorkBuddy）
 schtasks /Run /TN "WorkBuddy每日签到"
 
 # 查看最近一次结果
-type "C:\Users\20183\Desktop\wb-checkin\last-result.txt"
+type ".\last-result.txt"
 ```
 
 ### 3. 查看日志
 
 ```powershell
-type "C:\Users\20183\Desktop\wb-checkin\logs\checkin-2026-08.log"
+type ".\logs\checkin-2026-09.log"
 ```
 
 ---
@@ -130,23 +135,28 @@ type "C:\Users\20183\Desktop\wb-checkin\logs\checkin-2026-08.log"
 | 计划任务「WorkBuddy每日签到」 | 任务计划程序 | ✅ 自动删除（含系统注册表缓存） |
 | 登录自启项 | 启动文件夹 VBS | ✅ 自动删除 |
 | 注册表 Run 键 | 注册表 | 无需清理（本程序**从不写注册表**） |
-| 项目文件夹（脚本/日志/结果/状态文件） | `wb-checkin\` | 加 `-RemoveAll` 后自动删除 |
-| 电源设置（永不休眠） | 系统电源方案 | 加 `-RestorePower` 恢复默认（睡眠 15/10 分钟、休眠 3 小时） |
+| 项目文件夹（脚本/日志/结果/状态文件） | 项目目录 | 加 `-RemoveAll` 后自动删除 |
+| 电源设置（永不睡眠/休眠） | 系统电源方案 | 加 `-RestorePower` 恢复默认（睡眠 15/10 分钟、休眠 3 小时） |
+| 计划任务模板 | `task-template.xml` | ✅ 安装成功后自动清理；常规卸载亦清理 |
+| 电源设置结果文件 | `power-change-result.txt` | ✅ 常规卸载即清理 |
+| 单实例锁文件 | `.checkin.lock` / `.checkin.info` | ✅ 常规卸载即清理 |
 
+> 快捷卸载：双击 `uninstall.bat` 即可启动卸载程序（自动调用 `uninstall-task.ps1`）。
+>
 > 说明：自动签到积累的积分保存在 WorkBuddy 服务器端，卸载本程序不影响已获取的积分。
 
 ---
 
 ## 常见问题
 
-**Q1：签到失败，日志提示“未识别到签到相关元素”？**
+**Q1：签到失败，日志提示"未识别到签到相关元素"？**
 - 确认 WorkBuddy 已登录账号（未登录会提示）。
 - 头像默认位置按窗口左下角计算，若界面布局不同，运行一次
   `workbuddy-checkin.ps1 -Calibrate` 校准。
 - 加 `-SaveScreens` 重跑，查看 debug\ 下的截图定位问题。
 
-**Q2：提示“系统没有可用的简体中文 OCR 引擎”？**
-Windows 设置 → 时间和语言 → 语言 → 添加“简体中文”语言包即可（重启生效）。
+**Q2：提示"系统没有可用的简体中文 OCR 引擎"？**
+Windows 设置 → 时间和语言 → 语言 → 添加"简体中文"语言包即可（重启生效）。
 
 **Q3：WorkBuddy 升级后按钮文字变了？**
 脚本顶部的 `$ClaimPattern` / `$DonePattern` / `$EntryPattern` 是正则关键词，
@@ -158,9 +168,9 @@ Windows 设置 → 时间和语言 → 语言 → 添加“简体中文”语言
 - 单实例锁保证同一时刻只有一个签到进程。
 
 **Q4b：明明已签到，却时不时弹出 WorkBuddy？**
-这是 v1 的一个缺陷：打开加油站页面后找不到「立即领取」时被当作"失败"，
+这是旧版本的缺陷：打开加油站页面后找不到「立即领取」时被当作"失败"，
 状态文件不更新，于是每小时都重新打开 WorkBuddy 反复尝试。
-v2 已修复：找不到领取按钮且界面为加油站/积分内容时，判定「今日已签到」
+v3 已修复：找不到领取按钮且界面为加油站/积分内容时，判定「今日已签到」
 并立即更新状态文件，后续每小时触发直接跳过、不再打开 WorkBuddy。
 若想保守处理（宁可漏签也不误判），可用 `-NoAssumeDone` 参数。
 
@@ -170,8 +180,8 @@ v2 已修复：找不到领取按钮且界面为加油站/积分内容时，判�
 **Q6：电脑空闲太久会自动睡眠，导致错过签到？**
 已处理：`set-never-sleep.ps1` 已将**所有电源方案**的「睡眠」和「休眠」都设为
 **从不**（交流/直流），电脑会保持运行状态。若日后发现设置被还原，重新运行：
-`powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\20183\Desktop\wb-checkin\set-never-sleep.ps1"`
-（会弹出 UAC 授权窗口，点“是”即可）。
+`powershell -NoProfile -ExecutionPolicy Bypass -File ".\set-never-sleep.ps1"`
+（会弹出 UAC 授权窗口，点"是"即可）。
 
 **Q7：电脑有密码，锁屏时能签到吗？**
 锁屏时脚本会**安全跳过**（不做任何点击，防止误操作），解锁后 1 小时内由
@@ -179,7 +189,7 @@ v2 已修复：找不到领取按钮且界面为加油站/积分内容时，判�
 
 **Q8：杀毒软件拦截？**
 脚本是纯 PowerShell（系统自带），无第三方依赖；若被杀软误报，将
-`wb-checkin` 目录加入信任区即可。
+项目目录加入信任区即可。
 
 ---
 
@@ -202,15 +212,15 @@ v2 已修复：找不到领取按钮且界面为加油站/积分内容时，判�
 - 单实例锁带时间戳自愈：正常流程严格小于 45 分钟（启动 90s + 空闲等待 300s + 领取验证 60s + 繁忙等待 30min），
   因此持有锁超过 45 分钟的实例必为卡死，会被自动终止并接管，不会阻塞后续签到。
 
-## v2 变更记录
+## v3.0.0 变更记录
 
-- 修复：已签到状态识别（找不到领取按钮 → 判定已签到并更新状态），停止每小时反复打开 WorkBuddy
-- 修复：领取点击验证改为轮询（最多 20 秒 × 3 次点击），消除"点击成功却误判失败"
-- 修复：DryRun 模式不再执行任何点击
-- 优化：状态文件检查前置，已签到日零开销（不再初始化 OCR / 启动 WorkBuddy）
-- 优化：任务隐藏窗口运行，无控制台闪烁
-- 优化：点击坐标自动钳制到屏幕内，窗口最小化/异常时先恢复再测量
-- 优化：失败时输出屏幕 OCR 前 15 行文本，便于定位问题
-- 优化：不再强关用户自己打开的 WorkBuddy（仅关闭本脚本启动的或执行了领取的）
-- 新增：OCR 超时保护（15 秒/次），防止脚本挂死
-- 新增：锁文件自愈（终止卡死实例并接管）
+- **架构**：全局版本标识统一为 v3.0.0，三端（安装/卸载/主程序）版本信息完全一致
+- **架构**：`$Script:Version` 变量集中管理版本号，所有输出位置动态引用，消除硬编码
+- **重构**：锁自愈机制增强，新增时间戳判断（45 分钟超时自愈），与文档描述一致
+- **重构**：安装脚本 XML 模板在注册成功后自动清理，减少残留
+- **重构**：卸载脚本自删除逻辑优化，增加重试次数提升健壮性
+- **重构**：`set-never-sleep.ps1` 补充 `.SYNOPSIS`/`.DESCRIPTION` 帮助头
+- **重构**：`uninstall.bat` 使用 `setlocal`/`endlocal` 隔离环境，避免污染父进程
+- **清理**：全项目冗余扫描与一致性校验完成
+- **修复**：主程序 `Assert-WorkBuddyWindow` 中窗口恢复逻辑优化
+- **修复**：安装脚本 XML 路径转义增强，防止特殊字符导致任务注册失败
