@@ -1,6 +1,6 @@
 # 运行时状态文件（不应提交到版本控制）
-.last-signin-date.txt
-.last-result.txt
+last-signin-date.txt
+last-result.txt
 
 # 运行时日志
 logs/
@@ -35,3 +35,6 @@ Desktop.ini
 *.tmp
 *.temp
 *.bak
+
+# 发布包（由 CI 自动生成）
+workbuddy-checkin-v*.zip

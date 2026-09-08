@@ -18,6 +18,9 @@
 .EXAMPLE
     # 指定每天 09:00 开始
     powershell -NoProfile -ExecutionPolicy Bypass -File .\install-task.ps1 -Time 09:00
+
+.NOTES
+    版本: 4.0.0
 #>
 [CmdletBinding()]
 param(
@@ -29,7 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.1.0"
+$Script:Version = "4.0.0"
 
 if (-not $ScriptPath) {
     $ScriptPath = Join-Path $PSScriptRoot "workbuddy-checkin.ps1"
@@ -144,6 +147,7 @@ if (-not $taskOk) {
     else {
         Write-Step "计划任务注册失败（权限不足？），请尝试右键「以管理员身份运行」本安装脚本"
         Write-Step "提示：即使任务注册失败，启动文件夹自启项仍可保证登录时自动签到"
+        # 保留 XML 文件以便排查，卸载时会清理
     }
 }
 
@@ -160,7 +164,7 @@ if (-not $SkipStartupVbs) {
 On Error Resume Next
 CreateObject("WScript.Shell").Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""$ScriptPath""", 0, False
 "@
-    [System.IO.File]::WriteAllText($vbsPath, $vbs, (New-Object System.Text.UTF8Encoding($true)))
+    [System.IO.File]::WriteAllText($vbsPath, $vbs, (New-Object System.Text.UTF8Encoding($false)))
     if (Test-Path $vbsPath) {
         Write-Step "已创建登录自启项: $vbsPath"
         Write-Step "效果：电脑重启后登录 Windows 即自动补签，无需手动打开任何东西"

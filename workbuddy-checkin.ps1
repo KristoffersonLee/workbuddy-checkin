@@ -29,6 +29,7 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File .\workbuddy-checkin.ps1 -Calibrate
 
 .NOTES
+    版本: 4.0.0
     依赖：Windows 10/11 + 简体中文 OCR 语言包 + Windows PowerShell 5.1（系统自带）
     注意：自动签到/自动退出属于个人自动化操作，请确认符合 WorkBuddy 服务条款。
 #>
@@ -54,7 +55,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.1.0"
+$Script:Version = "4.0.0"
 
 # ============================================================
 # 0. 若运行在 PowerShell Core(pwsh) 下，自动切换到 Windows PowerShell 5.1
@@ -109,6 +110,7 @@ $DebugDir = Join-Path $PSScriptRoot "debug"
 if ($SaveScreens -and -not (Test-Path $DebugDir)) {
     New-Item -ItemType Directory -Path $DebugDir -Force | Out-Null
 }
+
 # 清理过期日志与调试截图
 Get-ChildItem $LogDir -Filter "checkin-*.log" -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$LogKeepDays) } |
@@ -154,12 +156,16 @@ public class WbWin32 {
 # ============================================================
 # 3. 通用工具
 # ============================================================
+$Script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$ts][$Level] $Message"
     Write-Host $line
-    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch { }
+    try {
+        [System.IO.File]::AppendAllText($LogFile, $line + "`r`n", $Script:Utf8NoBom)
+    } catch { }
 }
 
 function Show-Notification {
@@ -184,7 +190,7 @@ function Write-Result {
     param([string]$Result, [string]$Detail = "")
     $txt = "{0}  {1}  {2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Result, $Detail
     try {
-        Set-Content -Path (Join-Path $PSScriptRoot "last-result.txt") -Value $txt -Encoding UTF8
+        [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot "last-result.txt"), $txt, $Script:Utf8NoBom)
     } catch { }
 }
 
@@ -212,7 +218,7 @@ function Get-LastSigninDate {
     return ""
 }
 function Set-LastSigninDate {
-    (Get-Date -Format "yyyy-MM-dd") | Set-Content -Path $StateFile -Encoding UTF8
+    [System.IO.File]::WriteAllText($StateFile, (Get-Date -Format "yyyy-MM-dd"), $Script:Utf8NoBom)
 }
 
 # ============================================================
@@ -225,7 +231,7 @@ $LockStaleMinutes = 45
 
 function Update-LockInfo {
     $info = "{0}|{1}" -f $PID, (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-    try { [System.IO.File]::WriteAllText($lockInfoPath, $info, (New-Object System.Text.UTF8Encoding($false))) } catch { }
+    try { [System.IO.File]::WriteAllText($lockInfoPath, $info, $Script:Utf8NoBom) } catch { }
 }
 
 function Test-LockStale {

@@ -31,6 +31,9 @@
 .EXAMPLE
     # 演练模式（只显示将要删除的内容，不实际删除）
     powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-task.ps1 -RemoveAll -WhatIf
+
+.NOTES
+    版本: 4.0.0
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -40,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.1.0"
+$Script:Version = "4.0.0"
 
 # ============================================================
 # 交互式选择卸载模式（仅在未显式传入 -RemoveAll 时弹出）
@@ -246,7 +249,7 @@ powercfg /S SCHEME_CURRENT | Out-Null
 '@
         $tmpScript = Join-Path $env:TEMP "wb-restore-power.ps1"
         try {
-            Set-Content -Path $tmpScript -Value $restoreBody -Encoding UTF8
+            [System.IO.File]::WriteAllText($tmpScript, $restoreBody, (New-Object System.Text.UTF8Encoding($false)))
             if ($isAdmin) {
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tmpScript
             }
@@ -286,10 +289,30 @@ if ($RemoveAll) {
         # 延迟删除自身与文件夹（等本 PowerShell 进程退出后执行）
         if (Test-Path $dir) {
             $file = Join-Path $dir "uninstall-task.ps1"
-            $maxRetries = 5
+            $maxRetries = 10
             $retryDelay = 2
-            $cmdLine = "timeout /t $retryDelay /nobreak >nul & " + (1..$maxRetries | ForEach-Object { "del `"$file`" >nul 2>&1 & if exist `"$file`" timeout /t $retryDelay /nobreak >nul & " }) + "rd /s /q `"$dir`""
-            Start-Process cmd.exe -ArgumentList "/c", $cmdLine -WindowStyle Hidden | Out-Null
+            # 构建 cmd 命令：循环重试删除自身，成功后删除文件夹
+            $cmdLines = @(
+                "@echo off",
+                "setlocal",
+                "set FILE=""$file""",
+                "set DIR=""$dir""",
+                "set MAX=$maxRetries",
+                "set DELAY=$retryDelay",
+                "for /L %%i in (1,1,%MAX%) do (",
+                "  del /F /Q ""%FILE%"" >nul 2>&1",
+                "  if not exist ""%FILE%"" (",
+                "    rd /S /Q ""%DIR%"" >nul 2>&1",
+                "    exit /b 0",
+                "  )",
+                "  timeout /t %DELAY% /nobreak >nul",
+                ")",
+                "exit /b 1"
+            )
+            $cmdLine = $cmdLines -join "`r`n"
+            $cmdFile = Join-Path $env:TEMP "wb-uninstall-cleanup.cmd"
+            [System.IO.File]::WriteAllText($cmdFile, $cmdLine, (New-Object System.Text.UTF8Encoding($false)))
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $cmdFile -WindowStyle Hidden | Out-Null
             Write-Host "  - 项目文件夹将在进程退出后自动删除: $dir" -ForegroundColor Green
         }
         Write-Host ""

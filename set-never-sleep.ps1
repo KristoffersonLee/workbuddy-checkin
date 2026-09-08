@@ -11,9 +11,12 @@
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File .\set-never-sleep.ps1
+
+.NOTES
+    版本: 4.0.0
 #>
 $ErrorActionPreference = "Stop"
-$Script:Version = "3.1.0"
+$Script:Version = "4.0.0"
 
 $resultFile = Join-Path $PSScriptRoot "power-change-result.txt"
 $out = New-Object System.Collections.ArrayList
@@ -52,7 +55,7 @@ foreach ($line in $list) {
 
 if ($guids.Count -eq 0) {
     Log "错误：未找到任何电源方案！"
-    $out | Set-Content -Path $resultFile -Encoding UTF8
+    [System.IO.File]::WriteAllText($resultFile, ($out -join "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
     exit 1
 }
 
@@ -106,5 +109,5 @@ else {
     Log "✘ 仍有部分设置不为 0，请检查上方输出。"
 }
 
-$out | Set-Content -Path $resultFile -Encoding UTF8
+[System.IO.File]::WriteAllText($resultFile, ($out -join "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
 exit 0
